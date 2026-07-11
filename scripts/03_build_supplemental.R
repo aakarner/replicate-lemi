@@ -40,7 +40,11 @@ supplemental <- tibble::tibble(
 # obtained, without changing scoring code or silently mixing row order.
 override_source <- function(data, path, value_fields, source_label) {
   if (!file.exists(path)) return(data)
-  replacement <- readr::read_csv(path, show_col_types = FALSE)
+  replacement <- readr::read_csv(
+    path,
+    col_types = readr::cols(geoid = readr::col_character()),
+    show_col_types = FALSE
+  )
   assert_unique(replacement, "geoid", basename(path))
   missing_fields <- setdiff(c("geoid", value_fields), names(replacement))
   if (length(missing_fields)) {
@@ -61,6 +65,10 @@ supplemental <- override_source(
   "user-supplied independent heat extract"
 )
 supplemental <- override_source(
+  supplemental, "data/processed/energy_burden_lead.csv", "energy_burden",
+  "independent DOE/OEDI LEAD 2022 aggregation"
+)
+supplemental <- override_source(
   supplemental, "data/manual/energy_burden.csv", "energy_burden",
   "user-supplied independent DOE LEAD extract"
 )
@@ -74,13 +82,13 @@ assert_unique(supplemental, "geoid", "supplemental lever table")
 write_csv_stable(supplemental, "data/processed/supplemental_levers.csv")
 
 provenance <- tibble::tribble(
-  ~lever, ~current_source, ~independently_reproduced,
-  "Low physical activity", "Published raw fallback; CDC PLACES 2025", FALSE,
-  "Persistent poverty", "Published raw fallback; Census tract list", FALSE,
-  "Life expectancy", "Published raw fallback; USALEEP areal crosswalk", FALSE,
-  "Heat disparity", "Published raw fallback unless data/manual/heat_disparity.csv is supplied", FALSE,
-  "Energy burden", "Published raw fallback unless data/manual/energy_burden.csv is supplied", FALSE,
-  "Institutional group quarters", "Published raw fallback; 2020 Decennial P5", FALSE
+  ~lever, ~current_source, ~independently_reproduced, ~coverage,
+  "Low physical activity", "Published raw fallback; CDC PLACES 2025", FALSE, "249 tracts from published raw field",
+  "Persistent poverty", "Published raw fallback; Census tract list", FALSE, "249 tracts from published raw field",
+  "Life expectancy", "Published raw fallback; USALEEP areal crosswalk", FALSE, "published raw field plus MICE gaps",
+  "Heat disparity", "Published raw fallback unless data/manual/heat_disparity.csv is supplied", FALSE, "249 tracts from published raw field",
+  "Energy burden", "Independent DOE/OEDI LEAD 2022 aggregation", TRUE, "248 of 249 tracts; one tract absent and imputed",
+  "Institutional group quarters", "Published raw fallback; 2020 Decennial P5", FALSE, "249 tracts from published raw field"
 )
 
 # This summary is intended to remain prominent until each FALSE value can be

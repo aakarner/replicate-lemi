@@ -39,8 +39,9 @@ vignettes/*.pdf
 # R Environment Variables
 .Renviron
 
-# pkgdown site
-docs/
+# pkgdown site (retain the hand-written methodology note)
+docs/*
+!docs/energy-burden-reconstruction.md
 
 # translation temp files
 po/*~

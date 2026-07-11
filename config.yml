@@ -24,6 +24,15 @@ imputation:
 # records that provenance in every output.
 supplemental_fallback: published_raw
 
+# DOE LEAD reconstruction. AMI is used only as the archive/table family; all
+# AMI groups, tenures, building vintages/types, and heating fuels are retained.
+lead:
+  archive_url: "https://data.openei.org/files/6219/TX-2022-LEAD-data.zip"
+  archive_member: "TX AMI Census Tracts 2022.csv"
+  rounding: nearest_integer
+  category_min: 0
+  category_max: 4
+
 map:
   breaks: [0, 21.37, 40.73, 61.69, 79.84, 100]
   colors: ["#0868AC", "#43A2CA", "#7BCCC4", "#BAE4BC", "#F0F9E8"]

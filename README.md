@@ -9,10 +9,12 @@ table and ArcGIS map.
 - The 2024 ACS levers are pulled independently from the Census API.
 - 2024 eviction filing rates are rebuilt from unique court cases in
   `data/eviction_filings_full_geocoded_hex.csv`.
+- Energy burden is independently aggregated from the official Texas 2022 DOE
+  LEAD tract micro-aggregate archive; continuous and rounded values are retained.
 - The documented percentile, sub-theme, theme, and overall calculations are
   implemented with joins keyed on 11-digit census tract GEOID.
-- Heat and energy burden use clearly marked published raw values until the
-  original extracts/API parameters are available.
+- Heat and several remaining supplemental levers use clearly marked published
+  raw values until their original extracts/API parameters are available.
 - The study-area GEOID list and polygons temporarily use the April 2026 public
   ArcGIS layer until the historical Austin jurisdiction-boundary snapshot is
   available.
@@ -32,6 +34,11 @@ source("run_all.R")
 
 Intermediate downloads are written to `data/raw`, processed inputs to
 `data/processed`, and final tables, maps, and diagnostics to `output`.
+
+The inferred DOE LEAD aggregation is documented separately in
+[`docs/energy-burden-reconstruction.md`](docs/energy-burden-reconstruction.md).
+That note is important because the official LEMI report names the source and
+concept but does not document the filters, aggregation, or rounding used.
 
 ## Interpretation
 
