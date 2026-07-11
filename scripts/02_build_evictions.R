@@ -2,6 +2,10 @@ source("R/utils.R")
 check_packages()
 ensure_directories()
 
+# PURPOSE ---------------------------------------------------------------------
+# Convert defendant-level court exports into one record per 2024 eviction case,
+# spatially assign each filing to a 2020 tract, and divide case counts by ACS
+# renter-occupied households as specified in the technical report.
 cfg <- read_config()
 input_path <- "data/eviction_filings_full_geocoded_hex.csv"
 if (!file.exists(input_path)) stop("Missing ", input_path, call. = FALSE)
@@ -27,6 +31,7 @@ filings <- readr::read_csv(
     duplicate_case_defendant = readr::col_logical()
   )
 ) |>
+  # The source covers multiple years; LEMI uses calendar-year 2024 filings.
   dplyr::filter(filing_year == cfg$eviction_year) |>
   dplyr::mutate(
     case_key = paste(jp_district, case_number, sep = "|"),
@@ -51,6 +56,8 @@ case_coordinate_counts <- filings |>
   )
 
 case_diagnostics <- filings |>
+  # Retain case-level ambiguity measures even though only one representative
+  # coordinate will be used for tract assignment.
   dplyr::group_by(case_key) |>
   dplyr::summarise(
     court = dplyr::first(court),
@@ -63,6 +70,8 @@ case_diagnostics <- filings |>
   )
 
 cases <- case_coordinate_counts |>
+  # Sorting establishes a deterministic representative-address rule. slice(1)
+  # is therefore reproducible even when a case contains multiple defendants.
   dplyr::arrange(
     case_key,
     dplyr::desc(defendant_rows_at_coordinate),
@@ -78,6 +87,8 @@ case_points <- cases |>
   dplyr::filter(is.finite(longitude), is.finite(latitude)) |>
   sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326, remove = FALSE)
 
+# Transform points to the tract layer's CRS before the point-in-polygon test.
+# st_within avoids assigning a case merely because it is near a tract boundary.
 case_points <- sf::st_transform(case_points, sf::st_crs(tracts))
 case_points <- sf::st_join(case_points, tracts, join = sf::st_within, left = TRUE)
 
@@ -86,6 +97,9 @@ tract_counts <- case_points |>
   dplyr::filter(!is.na(geoid)) |>
   dplyr::count(geoid, name = "eviction_filings")
 
+# Travis County tracts with no observed filing receive a real zero. Hays and
+# Williamson tracts remain missing—not zero—because the supplied five-JP-court
+# source does not observe filings outside Travis County. MICE handles these gaps.
 eviction_rates <- acs |>
   dplyr::select(geoid, renter_households, renter_households_moe) |>
   dplyr::left_join(tract_counts, by = "geoid") |>
@@ -119,6 +133,8 @@ case_output <- case_points |>
   )
 write_csv_stable(case_output, "output/diagnostics/eviction_case_assignment.csv")
 
+# This compact QA table makes changes in deduplication or geocoding behavior
+# visible without exposing defendant names in a tracked artifact.
 summary <- tibble::tibble(
   metric = c(
     "2024 defendant rows", "2024 unique court cases", "cases with multiple coordinates",

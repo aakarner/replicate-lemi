@@ -2,6 +2,10 @@ source("R/utils.R")
 check_packages()
 ensure_directories()
 
+# PURPOSE ---------------------------------------------------------------------
+# Reconstruct the documented score from the public lever percentiles, then test
+# whether each published ArcGIS score came from the target GEOID or from one of
+# its touching neighbors. This diagnostic never feeds the corrected index.
 public <- readr::read_csv(
   "data/raw/lemi_public_api.csv",
   col_types = readr::cols(.default = readr::col_character())
@@ -20,6 +24,8 @@ published_lever_fields <- c(
   "pers_pov_reversed_pctl"
 )
 
+# Recreate the two documented overall-score steps using the public lever fields:
+# (1) mean the 18 favorable percentiles; (2) percentile-rank that mean.
 for (field in published_lever_fields) public[[field]] <- clean_census_numeric(public[[field]])
 public$published_lemi_pctl <- clean_census_numeric(public$lemi_pctl)
 public$intended_raw_mean <- rowMeans(public[published_lever_fields])
@@ -41,10 +47,15 @@ map_layer <- map_layer |>
     by = "geoid"
   )
 
+# Polygon INTERSECT returns the tract itself plus every tract sharing an edge or
+# vertex. If attributes were joined this way, multiple candidates exist even
+# though both layers represent the same 249 GEOIDs.
 touching <- sf::st_intersects(map_layer)
 public_raw <- map_layer$INDEX_RAW
 
 candidate_sources <- lapply(seq_len(nrow(map_layer)), function(i) {
+  # Search only within the target's INTERSECT candidate set for a raw mean that
+  # exactly reproduces the hosted INDEX_RAW value.
   neighbor_ids <- touching[[i]]
   neighbor_ids[abs(map_layer$intended_raw_mean[neighbor_ids] - public_raw[i]) < 1e-7]
 })
@@ -61,6 +72,8 @@ source_index <- vapply(seq_len(nrow(map_layer)), function(i) {
 }, integer(1))
 
 spatial_join_audit <- tibble::tibble(
+  # One row per target tract records the candidate source selected by the
+  # reconstruction and whether its raw and percentile values reproduce ArcGIS.
   target_geoid = map_layer$geoid,
   touching_polygon_count = lengths(touching),
   arcgis_join_count = map_layer$Join_Count,
@@ -102,6 +115,8 @@ audit <- audit |>
 write_csv_stable(audit, "output/diagnostics/public_score_mismatches.csv")
 write_csv_stable(spatial_join_audit, "output/diagnostics/arcgis_spatial_join_audit.csv")
 
+# Aggregate the tract-level evidence into a short report suitable for sending
+# to the City along with the detailed CSVs.
 n <- nrow(spatial_join_audit)
 n_wrong_source <- sum(!spatial_join_audit$source_is_target, na.rm = TRUE)
 n_raw_reproduced <- sum(spatial_join_audit$raw_value_reproduced, na.rm = TRUE)

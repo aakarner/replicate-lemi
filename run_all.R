@@ -1,3 +1,6 @@
+# Run stages in dependency order. Each script executes in a fresh child
+# environment so temporary objects do not leak into later stages, while shared
+# package options and helper functions remain accessible through globalenv().
 pipeline_scripts <- c(
   "scripts/00_download_reference.R",
   "scripts/01_build_acs.R",
@@ -9,6 +12,8 @@ pipeline_scripts <- c(
 )
 
 for (script in pipeline_scripts) {
+  # The progress marker makes long API/imputation runs easier to diagnose in CI
+  # or a non-interactive R session.
   message("\n==> ", script)
   source(script, local = new.env(parent = globalenv()))
 }

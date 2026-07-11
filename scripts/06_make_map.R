@@ -2,6 +2,9 @@ source("R/utils.R")
 check_packages(c("leaflet", "htmlwidgets"))
 ensure_directories()
 
+# PURPOSE ---------------------------------------------------------------------
+# Attach corrected scores to tract polygons by GEOID and create three map-ready
+# products: a static PNG, a self-contained interactive HTML map, and a GeoPackage.
 cfg <- read_config()
 tracts <- sf::st_read("data/processed/lemi_study_tracts.gpkg", quiet = TRUE) |>
   dplyr::select(geoid)
@@ -20,8 +23,12 @@ mapped <- tracts |>
     by = "geoid"
   )
 
+# A missing score here indicates a failed or mismatched GEOID join and should
+# stop publication rather than appearing as an unlabeled tract on the map.
 stopifnot(!anyNA(mapped$lemi_pctl))
 
+# Reuse the public map's five breaks and colors for direct visual comparison.
+# These classes affect display only; they do not enter index calculation.
 breaks <- as.numeric(unlist(cfg$map$breaks))
 labels <- unname(unlist(cfg$map$labels))
 colors <- unname(unlist(cfg$map$colors))
@@ -64,6 +71,8 @@ ggplot2::ggsave(
   bg = "white"
 )
 
+# Keep popups compact while exposing the three theme scores that explain the
+# overall tract result.
 popup <- paste0(
   "<strong>", mapped$name, "</strong><br>",
   "LEMI: ", round(mapped$lemi_pctl, 1), "<br>",
@@ -79,6 +88,8 @@ palette <- leaflet::colorBin(
   right = TRUE
 )
 
+# Transform to longitude/latitude because Leaflet web maps expect EPSG:4326.
+# The original projected geometry remains available in the output GeoPackage.
 interactive_map <- leaflet::leaflet(sf::st_transform(mapped, 4326)) |>
   leaflet::addProviderTiles(leaflet::providers$CartoDB.Positron) |>
   leaflet::addPolygons(
@@ -104,6 +115,8 @@ htmlwidgets::saveWidget(
   selfcontained = TRUE
 )
 
+# The GeoPackage is the preferred handoff for GIS users because it preserves
+# tract geometry, scores, themes, and display class in one portable layer.
 sf::st_write(
   mapped,
   "output/lemi_corrected.gpkg",

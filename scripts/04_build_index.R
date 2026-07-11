@@ -2,6 +2,10 @@ source("R/utils.R")
 check_packages("mice")
 ensure_directories()
 
+# PURPOSE ---------------------------------------------------------------------
+# Combine the 18 raw levers, impute missing values using the report's MICE/PMM
+# settings, orient and percentile-rank every lever, and calculate sub-theme,
+# theme, and overall scores using the documented mean-of-percentiles method.
 cfg <- read_config()
 acs <- readr::read_csv(
   "data/processed/acs_levers.csv",
@@ -24,6 +28,9 @@ input <- acs |>
   dplyr::left_join(supplemental, by = "geoid")
 assert_unique(input, "geoid", "combined lever input")
 
+# This table is the scoring specification in executable form. It records which
+# raw direction is favorable and prevents theme membership or directionality
+# from being scattered across hard-coded calculation blocks.
 lever_specs <- tibble::tribble(
   ~lever, ~favorable_when, ~percentile_field, ~theme, ~subtheme,
   "uninsured_pct", "low", "uninsured_pct_pctl", "health_wb", "health_acc",
@@ -49,6 +56,8 @@ lever_specs <- tibble::tribble(
 lever_names <- lever_specs$lever
 lever_data <- as.data.frame(input[lever_names])
 
+# Capture missingness before imputation so it can be compared with the report
+# and with later source improvements.
 missingness <- tibble::tibble(
   lever = lever_names,
   missing_n = vapply(lever_data, function(x) sum(is.na(x)), integer(1)),
@@ -57,6 +66,9 @@ missingness <- tibble::tibble(
 write_csv_stable(missingness, "output/diagnostics/lever_missingness_before_imputation.csv")
 
 predictor_matrix <- mice::make.predictorMatrix(lever_data)
+
+# A lever never predicts itself. Complete levers can still predict incomplete
+# levers even though they do not require an imputation method of their own.
 diag(predictor_matrix) <- 0
 core_predictors <- c(
   "med_hh_income", "poverty_pct", "underemp_pct", "lths_pct",
@@ -81,6 +93,8 @@ write.csv(
   na = ""
 )
 
+# PMM is enabled only for fields containing missing values. Observed values are
+# never altered by MICE.
 method <- rep("pmm", length(lever_names))
 names(method) <- lever_names
 method[missingness$missing_n == 0] <- ""
@@ -100,10 +114,18 @@ imputed <- mice::mice(
   seed = cfg$imputation$seed,
   printFlag = FALSE
 )
+
+# Save the complete mids object—not just one completion—so convergence chains,
+# donor draws, and alternate completed datasets remain available for review.
 saveRDS(imputed, "data/processed/lemi_mice.rds")
 
+# Apply the same scoring steps to any completed dataset. Keeping this logic in
+# one function ensures the primary result and imputation-sensitivity analysis
+# cannot drift apart.
 score_completed_data <- function(completed) {
   scored <- as.data.frame(completed)
+
+  # Stage 1: place all 18 levers on a common 0-1 favorable percentile scale.
   for (i in seq_len(nrow(lever_specs))) {
     spec <- lever_specs[i, ]
     scored[[spec$percentile_field]] <- percent_rank_favorable(
@@ -111,24 +133,37 @@ score_completed_data <- function(completed) {
     )
   }
 
+  # Stage 2: average lever percentiles within each sub-theme, then percentile-
+  # rank that mean across the 249 tracts.
   for (subtheme_name in unique(lever_specs$subtheme)) {
     fields <- lever_specs$percentile_field[lever_specs$subtheme == subtheme_name]
     scored[[paste0(subtheme_name, "_pctl")]] <- row_percentile_mean(scored, fields)
   }
+
+  # Theme scores are interpretive summaries. They do not feed the overall
+  # score, so the six-lever themes do not add another weighting layer.
   for (theme_name in unique(lever_specs$theme)) {
     fields <- lever_specs$percentile_field[lever_specs$theme == theme_name]
     scored[[paste0(theme_name, "_pctl")]] <- row_percentile_mean(scored, fields)
   }
+
+  # Overall LEMI is calculated directly from all 18 lever percentiles, exactly
+  # as the report specifies, and is then percentile-ranked to a 0-100 scale.
   scored$lemi_raw_mean <- rowMeans(scored[lever_specs$percentile_field])
   scored$lemi_pctl <- dplyr::percent_rank(scored$lemi_raw_mean) * 100
   scored
 }
 
 completion_number <- cfg$imputation$completed_dataset
+
+# The report does not state how its ten completed datasets were reduced to one
+# published table. config.yml makes our provisional selection explicit.
 completed <- mice::complete(imputed, action = completion_number)
 scored <- score_completed_data(completed)
 
 for (lever in lever_names) {
+  # Flags describe the status of the original joined input, not whether a value
+  # happens to equal a PMM donor after completion.
   scored[[paste0(lever, "_flag")]] <- ifelse(
     is.na(lever_data[[lever]]), "Imputed", "Original"
   )
@@ -142,7 +177,9 @@ scores <- dplyr::bind_cols(
 assert_unique(scores, "geoid", "corrected LEMI scores")
 write_csv_stable(scores, "output/lemi_scores_corrected.csv")
 
-# Show how much the unspecified random completion can affect the final score.
+# Re-score every completion to show how much the unspecified completion choice
+# can affect a tract's final percentile. This is especially important while the
+# City's seed, predictor matrix, and pooling/selection rule remain unavailable.
 sensitivity <- purrr::map_dfr(seq_len(cfg$imputation$m), function(i) {
   completed_i <- mice::complete(imputed, action = i)
   scored_i <- score_completed_data(completed_i)

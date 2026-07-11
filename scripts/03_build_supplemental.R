@@ -2,6 +2,11 @@ source("R/utils.R")
 check_packages()
 ensure_directories()
 
+# PURPOSE ---------------------------------------------------------------------
+# Assemble the non-ACS/non-eviction levers. Exact source extracts or parameters
+# are not yet available for every lever, so the published *raw, pre-imputation*
+# fields are used as explicit temporary fallbacks. No published final score or
+# theme score enters the corrected calculation.
 cfg <- read_config()
 public <- readr::read_csv(
   "data/raw/lemi_public_api.csv",
@@ -10,6 +15,8 @@ public <- readr::read_csv(
 
 numeric_field <- function(field) clean_census_numeric(public[[field]])
 
+# Each value travels with a source label so downstream users can distinguish an
+# independently supplied extract from the provisional public-raw fallback.
 supplemental <- tibble::tibble(
   geoid = public$geoid,
   low_phys_activity = numeric_field("low_phys_activity"),
@@ -28,6 +35,9 @@ supplemental <- tibble::tibble(
   gq_institutional_pct_source = "published raw fallback; 2020 Decennial P5"
 )
 
+# A manual file overrides only matching GEOIDs and requested fields. This lets
+# the pipeline improve incrementally as original City/Every Texan extracts are
+# obtained, without changing scoring code or silently mixing row order.
 override_source <- function(data, path, value_fields, source_label) {
   if (!file.exists(path)) return(data)
   replacement <- readr::read_csv(path, show_col_types = FALSE)
@@ -59,6 +69,7 @@ supplemental <- override_source(
   "user-supplied independent USALEEP crosswalk"
 )
 
+# Enforce one row per tract before this table reaches the MICE/scoring stage.
 assert_unique(supplemental, "geoid", "supplemental lever table")
 write_csv_stable(supplemental, "data/processed/supplemental_levers.csv")
 
@@ -71,6 +82,9 @@ provenance <- tibble::tribble(
   "Energy burden", "Published raw fallback unless data/manual/energy_burden.csv is supplied", FALSE,
   "Institutional group quarters", "Published raw fallback; 2020 Decennial P5", FALSE
 )
+
+# This summary is intended to remain prominent until each FALSE value can be
+# replaced by an independently reproduced input.
 write_csv_stable(provenance, "output/diagnostics/supplemental_provenance.csv")
 
 message("Supplemental lever table complete; provisional fields are explicitly labeled.")

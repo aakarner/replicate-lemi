@@ -2,6 +2,10 @@ source("R/utils.R")
 check_packages()
 ensure_directories()
 
+# PURPOSE ---------------------------------------------------------------------
+# Independently construct every ACS-derived raw lever and its supporting counts
+# and margins of error. The public LEMI values are used only after construction
+# to validate that the table/variable interpretation is correct.
 cfg <- read_config()
 census_key <- Sys.getenv("CENSUS_API_KEY")
 if (!nzchar(census_key)) {
@@ -13,6 +17,9 @@ study_area <- readr::read_csv(
   col_types = readr::cols(.default = readr::col_character())
 )
 
+# Query one ACS product for every tract in one county. Census returns a matrix-
+# like JSON response whose first row contains column names, so it is normalized
+# here before any variables are interpreted.
 census_tract_query <- function(dataset, variables, county_fips) {
   endpoint <- paste0(
     "https://api.census.gov/data/", cfg$acs_year, "/", dataset
@@ -30,11 +37,16 @@ census_tract_query <- function(dataset, variables, county_fips) {
   names(response) <- response[1, ]
   response <- response[-1, , drop = FALSE]
   response$geoid <- paste0(response$state, response$county, response$tract)
+
+  # GEOID remains character to preserve leading zeroes in other states and to
+  # guarantee consistent joins with spatial data.
   for (variable in variables) response[[variable]] <- clean_census_numeric(response[[variable]])
   response[c("geoid", "NAME", variables)]
 }
 
 pull_counties <- function(dataset, variables) {
+  # Census limits the number of fields returned in one request. Chunking at 45
+  # leaves room for NAME and geographic fields while preserving a stable join.
   chunks <- split(variables, ceiling(seq_along(variables) / 45))
   purrr::map(chunks, function(variable_chunk) {
     purrr::map_dfr(
@@ -46,6 +58,9 @@ pull_counties <- function(dataset, variables) {
     purrr::reduce(dplyr::full_join, by = "geoid")
 }
 
+# Subject-table fields: disability, ambulatory disability among seniors,
+# preschool enrollment, insurance coverage, poverty, and limited English.
+# E = estimate, M = margin of error, and Cxx identifies a subject-table column.
 subject_vars <- c(
   "S1810_C02_001E", "S1810_C02_001M", "S1810_C03_001E", "S1810_C03_001M",
   "S1810_C02_052E", "S1810_C02_052M", "S1810_C03_052E", "S1810_C03_052M",
@@ -55,12 +70,17 @@ subject_vars <- c(
   "S1602_C03_001E", "S1602_C03_001M", "S1602_C04_001E", "S1602_C04_001M"
 )
 
+# DP02 supplies the household-support components. PE and PM are the published
+# percentage estimate and its margin of error.
 profile_vars <- c(
   "DP02_0001E", "DP02_0001M",
   "DP02_0011E", "DP02_0011M", "DP02_0011PE", "DP02_0011PM",
   "DP02_0014E", "DP02_0014M", "DP02_0014PE", "DP02_0014PM"
 )
 
+# Less-than-high-school is the sum of B15003 attainment categories 002-016.
+# Underemployment is the sum of male/female cells working 1-34 hours per week
+# and only 1-26 weeks during the prior 12 months, exactly matching the report.
 lths_est <- sprintf("B15003_%03dE", 2:16)
 lths_moe <- sprintf("B15003_%03dM", 2:16)
 under_est <- paste0("B23022_", c("016E", "017E", "023E", "024E", "040E", "041E", "047E", "048E"))
@@ -76,6 +96,8 @@ detailed_vars <- c(
   "B25003_003E", "B25003_003M"
 )
 
+# Pull each ACS product separately because detailed, profile, and subject tables
+# live at different Census API endpoints.
 message("Pulling 2024 ACS subject tables...")
 subject <- pull_counties("acs/acs5/subject", subject_vars)
 message("Pulling 2024 ACS profile tables...")
@@ -88,12 +110,17 @@ acs <- study_area |>
   dplyr::left_join(profile, by = "geoid") |>
   dplyr::left_join(detailed, by = "geoid")
 
+# Derived count MOEs use the standard ACS root-sum-of-squares approximation.
+# na.rm = FALSE intentionally propagates suppressed component estimates.
 acs$lths_n <- rowSums(as.data.frame(acs[lths_est]), na.rm = FALSE)
 acs$lths_n_moe <- sqrt(rowSums(as.data.frame(acs[lths_moe])^2, na.rm = FALSE))
 acs$underemp_n <- rowSums(as.data.frame(acs[under_est]), na.rm = FALSE)
 acs$underemp_n_moe <- sqrt(rowSums(as.data.frame(acs[under_moe])^2, na.rm = FALSE))
 
 acs <- acs |>
+  # Assign readable names and construct percentages from their documented
+  # numerators and denominators. Published subject-table percentages are used
+  # directly where the Census already supplies the requested definition.
   dplyr::transmute(
     geoid,
     name,
@@ -168,6 +195,9 @@ acs <- acs |>
     )
   )
 
+# Household Support Risk Score (HSRS): independently rank each caregiving or
+# support-risk component within the 249-tract study universe, then average the
+# three ranks. Higher raw HSRS means greater risk and is reversed during scoring.
 acs$hh_support_risk_score <- rowMeans(
   cbind(
     dplyr::percent_rank(acs$female_hh_kids_pct),
@@ -206,6 +236,9 @@ validation <- purrr::map_dfr(comparison_fields, function(field) {
     mean_abs_difference = mean(abs(independent - published), na.rm = TRUE)
   )
 })
+
+# Differences near machine precision demonstrate that variable selection and
+# derived formulas match the public raw ACS fields without using them as inputs.
 write_csv_stable(validation, "output/diagnostics/acs_public_validation.csv")
 
 message("ACS construction complete for ", nrow(acs), " tracts.")
