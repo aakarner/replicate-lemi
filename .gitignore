@@ -47,3 +47,13 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# Reproducible pipeline outputs and downloaded source snapshots
+data/raw/
+data/processed/
+data/*.csv
+output/
+R/library/
+
+# Local operating-system metadata
+.DS_Store

@@ -1,0 +1,35 @@
+acs_year: 2024
+eviction_year: 2024
+state_fips: "48"
+county_fips:
+  Hays: "209"
+  Travis: "453"
+  Williamson: "491"
+
+# Until the April 2026 jurisdiction-boundary snapshot is available, use the
+# exact 249 GEOIDs and 2020 tract polygons preserved in the public LEMI layer.
+study_area_mode: published_geoids
+minimum_austin_overlap_pct: 10
+minimum_population: 50
+
+imputation:
+  seed: 20260428
+  m: 10
+  maxit: 20
+  donors: 5
+  completed_dataset: 1
+
+# Heat and energy burden cannot yet be independently rebuilt from the report.
+# The pipeline uses the published raw (pre-imputation) fields provisionally and
+# records that provenance in every output.
+supplemental_fallback: published_raw
+
+map:
+  breaks: [0, 21.37, 40.73, 61.69, 79.84, 100]
+  colors: ["#0868AC", "#43A2CA", "#7BCCC4", "#BAE4BC", "#F0F9E8"]
+  labels:
+    - Very High Structural Barriers
+    - High Structural Barriers
+    - Moderate Structural Barriers
+    - Low Structural Barriers
+    - Very Low Structural Barriers
