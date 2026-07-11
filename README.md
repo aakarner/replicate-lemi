@@ -40,6 +40,20 @@ The inferred DOE LEAD aggregation is documented separately in
 That note is important because the official LEMI report names the source and
 concept but does not document the filters, aggregation, or rounding used.
 
+## Parsimonious-index analysis
+
+After running the main pipeline, test how many levers are needed to preserve the
+full index's tract ordering with:
+
+```r
+source("scripts/07_analyze_parsimony.R")
+```
+
+The analysis exhaustively evaluates all 262,143 nonempty subsets, reports
+unconstrained and domain-balanced solutions, and checks rank, extreme-group,
+imputation, and cross-validation stability. See
+[`docs/parsimonious-index-analysis.md`](docs/parsimonious-index-analysis.md).
+
 ## Interpretation
 
 `output/lemi_scores_corrected.csv` is the primary result. It follows the report:

@@ -33,6 +33,14 @@ lead:
   category_min: 0
   category_max: 4
 
+parsimony:
+  # Rank-correlation targets reported for the globally best subset at each size.
+  fidelity_thresholds: [0.90, 0.95, 0.975, 0.99]
+  extreme_group_share: 0.20
+  cross_validation_repeats: 200
+  training_share: 0.80
+  seed: 20260710
+
 map:
   breaks: [0, 21.37, 40.73, 61.69, 79.84, 100]
   colors: ["#0868AC", "#43A2CA", "#7BCCC4", "#BAE4BC", "#F0F9E8"]

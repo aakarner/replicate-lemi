@@ -42,6 +42,7 @@ vignettes/*.pdf
 # pkgdown site (retain the hand-written methodology note)
 docs/*
 !docs/energy-burden-reconstruction.md
+!docs/parsimonious-index-analysis.md
 
 # translation temp files
 po/*~
